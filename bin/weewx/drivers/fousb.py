@@ -840,6 +840,13 @@ def power_cycle_station(hub, port):
         del handle
     loginf("Power cycle complete")
 
+# Write a sentinel file for external detection by, for example,
+# a cron job.  This can control the power cycling of the weather
+# station in the event of USB lockup.
+def request_reboot(sentinel_file):
+    loginf("Requesting reboot via sentinel file %s..." % sentinel_file)
+    open(sentinel_file, "w").write("Reboot me")
+
 # decode weather station raw data formats
 def _signed_byte(raw, offset):
     res = raw[offset]
@@ -1045,6 +1052,12 @@ class FineOffsetUSB(weewx.drivers.AbstractDevice):
             loginf("Wind direction averaging off")
             self.wind_direction_filter = None
 
+        # Name of a sentinel file to create if USB lockup is detected.
+        # This can be monitored in an external process and used to power
+        # cycle the station by any available means.  If you set this,
+        # it takes precedence over USB hub control.
+        self.sentinel_on_fail = stn_dict.get('sentinel_on_fail', None)
+
         self.data_format   = stn_dict.get('data_format', '1080')
         self.vendor_id     = 0x1941
         self.product_id    = 0x8021
@@ -1111,15 +1124,18 @@ class FineOffsetUSB(weewx.drivers.AbstractDevice):
     def _archive_interval_minutes(self):
         if self._arcint is not None:
             return self._arcint
-        if self.pc_hub is not None:
+        if (self.pc_hub is not None) or (self.sentinel_on_fail is not None):
             while True:
                 try:
                     self.openPort()
                     self._arcint = self._get_arcint()
                     break
                 except weewx.WeeWxIOError:
-                    self.closePort()
-                    power_cycle_station(self.pc_hub, self.pc_port)
+                    if self.sentinel_on_fail is not None:
+                        request_reboot(self.sentinel_on_fail)
+                    else:
+                        self.closePort()
+                        power_cycle_station(self.pc_hub, self.pc_port)
         else:
             self._arcint = self._get_arcint()
         return self._arcint
