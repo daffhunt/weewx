@@ -314,12 +314,17 @@ class Accum(dict):
         # treat it like a vector.
         self.add_value(record, obs_type, add_hilo, weight)
         
-        # If the type has not been seen before, initialize it
+        # If the type has not been seen before, initialize it.
         self._init_type('wind')
-        # Then add to highs/lows, and to the running sum:
+        # Then add to highs/lows.
         if add_hilo:
-            self['wind'].addHiLo((record.get('windGust'), record.get('windGustDir')), record['dateTime'])
-            self['wind'].addHiLo((record.get('windSpeed'), record.get('windDir')), record['dateTime'])
+            self['wind'].addHiLo((record.get('windSpeed'), record.get('windDir')),
+                                 record['dateTime'])
+            # If the station does not provide windGustDir, then substitute windDir.
+            # See issue #320, https://bit.ly/2HSo0ju
+            self['wind'].addHiLo((record.get('windGust'), record.get('windGustDir', record.get('windDir'))),
+                                 record['dateTime'])
+        # Add to the running sum.
         self['wind'].addSum((record['windSpeed'], record.get('windDir')), weight=weight)
         
     def check_units(self, record, obs_type, add_hilo, weight):  # @UnusedVariable
@@ -362,10 +367,14 @@ class Accum(dict):
     def extract_wind(self, record, obs_type):
         """Extract wind values from myself, and put in a record."""
         # Wind records must be flattened into the separate categories:
-        record['windSpeed']   = self[obs_type].avg
-        record['windDir']     = self[obs_type].vec_dir
-        record['windGust']    = self[obs_type].max
-        record['windGustDir'] = self[obs_type].max_dir
+        if 'windSpeed' not in record:
+            record['windSpeed']   = self[obs_type].avg
+        if 'windDir' not in record:
+            record['windDir']     = self[obs_type].vec_dir
+        if 'windGust' not in record:
+            record['windGust']    = self[obs_type].max
+        if 'windGustDir' not in record:
+            record['windGustDir'] = self[obs_type].max_dir
         
     def extract_sum(self, record, obs_type):
         record[obs_type] = self[obs_type].sum
